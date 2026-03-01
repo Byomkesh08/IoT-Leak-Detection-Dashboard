@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IoT-Based Differential Flow Leak Detection System</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <!-- Chart.js & Zoom Plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js"></script>
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <div id="connectionBanner" class="connection-banner hidden">
+    <span class="banner-dot"></span>
+    <span>Connection Lost to Sensor Network – Attempting Reconnect...</span>
+  </div>
+
+  <div id="app" class="dashboard">
+    <!-- HEADER PANEL -->
+    <header class="header-panel">
+      <div class="header-left">
+        <h1>IoT-Based Differential Flow Leak Detection System</h1>
+        <div class="header-subtitle">Municipal Water Network • SCADA Monitoring Console</div>
+      </div>
+      <div class="header-right">
+        <div class="header-widget">
+          <span class="label">Local Time</span>
+          <span id="clock" class="value mono">--:--:--</span>
+        </div>
+        <div class="header-widget">
+          <span class="label">System Uptime</span>
+          <span id="uptimeValue" class="value mono">--</span>
+        </div>
+        <div class="header-widget wifi-widget">
+          <span class="label">WiFi Link</span>
+          <div class="wifi-status">
+            <div class="wifi-bars">
+              <span class="bar" data-level="1"></span>
+              <span class="bar" data-level="2"></span>
+              <span class="bar" data-level="3"></span>
+              <span class="bar" data-level="4"></span>
+            </div>
+            <div class="wifi-text">
+              <span id="wifiStrengthValue" class="value mono">-- dBm</span>
+              <span id="wifiQualityLabel" class="sub">Link</span>
+            </div>
+          </div>
+        </div>
+        <div class="header-widget status-widget">
+          <span class="label">System Status</span>
+          <div id="systemStatusIndicator" class="status-indicator status-normal">
+            <span class="status-dot"></span>
+            <span id="systemStatusText" class="value">NORMAL</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-layout">
+      <!-- REAL-TIME METRICS GRID -->
+      <section class="panel metrics-panel" aria-label="Real-time Metrics">
+        <div class="panel-header">
+          <h2>Real-Time Telemetry</h2>
+        </div>
+        <div class="metrics-grid">
+          <div class="metric-card" id="card-main-flow">
+            <div class="metric-header">
+              <span class="metric-label">Main Flow</span>
+              <span class="metric-tag">Sensor 1</span>
+            </div>
+            <div class="metric-body">
+              <span id="mainFlowValue" class="metric-value mono">--</span>
+              <span class="metric-unit">L/min</span>
+            </div>
+          </div>
+
+          <div class="metric-card" id="card-branch-flow">
+            <div class="metric-header">
+              <span class="metric-label">Branch Flow</span>
+              <span class="metric-tag">Sensor 2</span>
+            </div>
+            <div class="metric-body">
+              <span id="branchFlowValue" class="metric-value mono">--</span>
+              <span class="metric-unit">L/min</span>
+            </div>
+          </div>
+
+          <div class="metric-card emphasis" id="card-flow-diff">
+            <div class="metric-header">
+              <span class="metric-label">Flow Difference</span>
+              <span class="metric-tag">ΔQ</span>
+            </div>
+            <div class="metric-body">
+              <span id="flowDiffValue" class="metric-value mono">--</span>
+              <span class="metric-unit">L/min</span>
+            </div>
+          </div>
+
+          <div class="metric-card" id="card-pressure">
+            <div class="metric-header">
+              <span class="metric-label">Pressure</span>
+              <span class="metric-tag">Line</span>
+            </div>
+            <div class="metric-body">
+              <span id="pressureValue" class="metric-value mono">--</span>
+              <span class="metric-unit">kPa</span>
+            </div>
+          </div>
+
+          <div class="metric-card gauge-card" id="card-leak-prob">
+            <div class="metric-header">
+              <span class="metric-label">Leak Probability</span>
+              <span class="metric-tag">AI Score</span>
+            </div>
+            <div class="metric-body gauge-wrapper">
+              <div id="leakProbGauge" class="gauge" style="--gauge-value:0; --gauge-color:#22c55e;">
+                <div class="gauge-inner">
+                  <span id="leakProbValue" class="metric-value mono">0%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric-card" id="card-leak-severity">
+            <div class="metric-header">
+              <span class="metric-label">Leak Severity</span>
+              <span class="metric-tag">Classification</span>
+            </div>
+            <div class="metric-body">
+              <span id="leakSeverityValue" class="metric-value mono severity-pill severity-normal">NORMAL</span>
+            </div>
+          </div>
+
+          <div class="metric-card" id="card-leak-duration">
+            <div class="metric-header">
+              <span class="metric-label">Leak Duration</span>
+              <span class="metric-tag">Active Leak</span>
+            </div>
+            <div class="metric-body">
+              <span id="leakDurationValue" class="metric-value mono">0s</span>
+            </div>
+          </div>
+
+          <div class="metric-card" id="card-leak-rate">
+            <div class="metric-header">
+              <span class="metric-label">Estimated Leak Rate</span>
+              <span class="metric-tag">Instantaneous</span>
+            </div>
+            <div class="metric-body">
+              <span id="leakRateValue" class="metric-value mono">0.0</span>
+              <span class="metric-unit">L/min</span>
+            </div>
+          </div>
+
+          <div class="metric-card" id="card-water-lost">
+            <div class="metric-header">
+              <span class="metric-label">Estimated Water Lost</span>
+              <span class="metric-tag">Since Activation</span>
+            </div>
+            <div class="metric-body">
+              <span id="waterLostValue" class="metric-value mono">0.0</span>
+              <span class="metric-unit">L</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- INDUSTRIAL PIPE VISUALIZATION PANEL -->
+      <section class="panel pipeline-panel" aria-label="Pipeline Visualization">
+        <div class="panel-header">
+          <h2>Pipeline Topology</h2>
+          <span class="panel-subtitle">Tank → Sensor 1 → Leak Tap → Sensor 2 → Outlet</span>
+        </div>
+        <div class="pipeline-diagram">
+          <div class="node tank">
+            <div class="node-label">Tank</div>
+          </div>
+          <div class="pipe-segment"></div>
+          <div class="node sensor">
+            <div class="node-label">Flow Sensor 1</div>
+          </div>
+          <div id="leakSection" class="pipe-segment leak-section">
+            <div class="pipe-inner">
+              <div class="water-stream"></div>
+            </div>
+            <div class="leak-tap">
+              <span class="tap-label">Leak Tap</span>
+              <span id="leakIcon" class="leak-icon hidden">⚠</span>
+            </div>
+          </div>
+          <div class="node sensor">
+            <div class="node-label">Flow Sensor 2</div>
+          </div>
+          <div class="pipe-segment"></div>
+          <div class="node outlet">
+            <div class="node-label">Outlet</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIVE GRAPH ENGINE -->
+      <section class="panel charts-panel" aria-label="Live Graphs">
+        <div class="panel-header panel-header-row">
+          <div>
+            <h2>Live Trend Analysis</h2>
+            <span class="panel-subtitle">Real-time flow, differential, and pressure telemetry</span>
+          </div>
+          <div class="chart-controls">
+            <div class="control-group">
+              <span class="control-label">Time Window</span>
+              <div class="segmented-control" id="timeFilterGroup">
+                <button class="seg-btn active" data-window="60">1 min</button>
+                <button class="seg-btn" data-window="300">5 min</button>
+                <button class="seg-btn" data-window="1800">30 min</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span class="control-label">Series</span>
+              <div class="toggle-group">
+                <label><input type="checkbox" id="toggleMainFlow" checked> Main</label>
+                <label><input type="checkbox" id="toggleBranchFlow" checked> Branch</label>
+                <label><input type="checkbox" id="toggleDiff" checked> ΔFlow</label>
+                <label><input type="checkbox" id="togglePressure" checked> Pressure</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title">
+              <span>Main vs Branch Flow</span>
+            </div>
+            <canvas id="mainBranchChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">
+              <span>Flow Difference (ΔQ)</span>
+            </div>
+            <canvas id="diffChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">
+              <span>Pressure Trend</span>
+            </div>
+            <canvas id="pressureChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- LEAK CLASSIFICATION PANEL -->
+      <section class="panel classification-panel" aria-label="Leak Classification">
+        <div class="panel-header">
+          <h2>Leak Classification Logic</h2>
+        </div>
+        <div class="classification-content">
+          <div class="classification-table-wrapper">
+            <table class="classification-table">
+              <thead>
+                <tr>
+                  <th>Flow Difference (L/min)</th>
+                  <th>Class</th>
+                  <th>Indicator</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-range="normal">
+                  <td>&lt; 0.5</td>
+                  <td>Normal</td>
+                  <td><span class="severity-dot severity-normal"></span></td>
+                </tr>
+                <tr data-range="minor">
+                  <td>0.5 – 1.5</td>
+                  <td>Minor</td>
+                  <td><span class="severity-dot severity-minor"></span></td>
+                </tr>
+                <tr data-range="moderate">
+                  <td>1.5 – 3.0</td>
+                  <td>Moderate</td>
+                  <td><span class="severity-dot severity-moderate"></span></td>
+                </tr>
+                <tr data-range="critical">
+                  <td>&gt; 3.0</td>
+                  <td>Critical</td>
+                  <td><span class="severity-dot severity-critical"></span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="classification-live">
+            <div id="classificationBox" class="classification-box severity-normal">
+              <span class="box-label">Live Classification</span>
+              <span id="classificationText" class="box-value mono">NORMAL</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- EVENT LOG SYSTEM -->
+      <section class="panel logs-panel" aria-label="Event Logs">
+        <div class="panel-header panel-header-row">
+          <div>
+            <h2>Event Stream</h2>
+            <span class="panel-subtitle">Detection events, operator alerts, and system changes</span>
+          </div>
+          <div class="logs-actions">
+            <button id="downloadCsvBtn" class="btn-secondary">Download Leak History (CSV)</button>
+          </div>
+        </div>
+        <div class="logs-table-wrapper">
+          <table class="logs-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Event</th>
+                <th>Severity</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ANALYTICS & IMPACT PANEL -->
+      <section class="panel analytics-panel" aria-label="Analytics and Impact">
+        <div class="panel-header">
+          <h2>Operational Impact Analytics</h2>
+        </div>
+        <div class="analytics-grid">
+          <div class="analytics-card">
+            <div class="analytics-label">Total Water Monitored Today</div>
+            <div class="analytics-value mono" id="totalWaterMonitored">0.0</div>
+            <div class="analytics-unit">m³ (approx)</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-label">Total Leak Events</div>
+            <div class="analytics-value mono" id="totalLeakEvents">0</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-label">Longest Leak Duration</div>
+            <div class="analytics-value mono" id="longestLeakDuration">0s</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-label">Average Leak Size</div>
+            <div class="analytics-value mono" id="averageLeakSize">0.0</div>
+            <div class="analytics-unit">L</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-label">Estimated Total Water Lost</div>
+            <div class="analytics-value mono" id="estimatedTotalWaterLost">0.0</div>
+            <div class="analytics-unit">L</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-label">System Availability</div>
+            <div class="analytics-value mono" id="systemAvailability">100%</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REPLAY MODE PANEL -->
+      <section class="panel replay-panel" aria-label="Replay Mode">
+        <div class="panel-header panel-header-row">
+          <div>
+            <h2>Leak Event Replay</h2>
+            <span class="panel-subtitle">Scrub through historical leak windows</span>
+          </div>
+          <div class="replay-controls">
+            <div class="control-group">
+              <span class="control-label">Select Leak Event</span>
+              <select id="replaySelect">
+                <option value="">None (Live Mode)</option>
+              </select>
+            </div>
+            <div class="control-group replay-slider-group">
+              <span class="control-label">Timeline</span>
+              <input id="replaySlider" type="range" min="0" max="100" value="0" disabled>
+              <span id="replayTimestamp" class="replay-timestamp mono">--</span>
+            </div>
+            <button id="replayPlayBtn" class="btn-primary" disabled>Enter Replay</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+
