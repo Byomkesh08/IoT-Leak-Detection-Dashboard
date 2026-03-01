@@ -1,3 +1,5 @@
+const MOCK_MODE = true;
+
 (() => {
   const API_CONFIG = {
     dataUrl: "/api/data",
@@ -5,6 +7,146 @@
     pollIntervalMs: 1000,
     maxHistoryPoints: 1800, // 30 minutes at 1s sampling
   };
+
+  const MOCK_SIM_CONFIG = {
+    mainFlowMin: 3.0,
+    mainFlowMax: 6.0,
+    pressureMin: 98,
+    pressureMax: 105,
+    leakIntervalMinSec: 15,
+    leakIntervalMaxSec: 25,
+    leakDurationMinSec: 5,
+    leakDurationMaxSec: 10,
+  };
+
+  const mockState = {
+    clockMs: Date.now(),
+    inLeak: false,
+    leakRemainingSec: 0,
+    untilNextLeakSec: 0,
+    uptimeSec: 0,
+    forceCriticalFlowDiff: 0,
+  };
+
+  function randomInRange(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function randomInt(min, max) {
+    return Math.floor(randomInRange(min, max + 1));
+  }
+
+  function ensureMockInitialized() {
+    if (mockState.untilNextLeakSec <= 0) {
+      mockState.untilNextLeakSec = randomInt(
+        MOCK_SIM_CONFIG.leakIntervalMinSec,
+        MOCK_SIM_CONFIG.leakIntervalMaxSec
+      );
+    }
+  }
+
+  function generateMockPayload() {
+    ensureMockInitialized();
+
+    const dtSec = API_CONFIG.pollIntervalMs / 1000;
+    mockState.clockMs += API_CONFIG.pollIntervalMs;
+    mockState.uptimeSec += dtSec;
+
+    const wasInLeak = mockState.inLeak;
+    let justStartedLeak = false;
+    let justEndedLeak = false;
+
+    if (mockState.inLeak) {
+      mockState.leakRemainingSec -= dtSec;
+      if (mockState.leakRemainingSec <= 0) {
+        mockState.inLeak = false;
+        mockState.forceCriticalFlowDiff = 0;
+        mockState.untilNextLeakSec = randomInt(
+          MOCK_SIM_CONFIG.leakIntervalMinSec,
+          MOCK_SIM_CONFIG.leakIntervalMaxSec
+        );
+      }
+    } else {
+      mockState.untilNextLeakSec -= dtSec;
+      if (mockState.untilNextLeakSec <= 0) {
+        mockState.inLeak = true;
+        mockState.leakRemainingSec = randomInt(
+          MOCK_SIM_CONFIG.leakDurationMinSec,
+          MOCK_SIM_CONFIG.leakDurationMaxSec
+        );
+      }
+    }
+
+    if (!wasInLeak && mockState.inLeak) {
+      justStartedLeak = true;
+    } else if (wasInLeak && !mockState.inLeak) {
+      justEndedLeak = true;
+    }
+
+    const baseMainFlow = randomInRange(
+      MOCK_SIM_CONFIG.mainFlowMin,
+      MOCK_SIM_CONFIG.mainFlowMax
+    );
+
+    let mainFlow = baseMainFlow;
+    let branchFlow;
+    let flowDifference;
+
+    if (mockState.inLeak) {
+      if (mockState.forceCriticalFlowDiff > 0) {
+        flowDifference = mockState.forceCriticalFlowDiff;
+      } else {
+        flowDifference = randomInRange(2.0, 5.0);
+      }
+      branchFlow = Math.max(0, mainFlow - flowDifference);
+    } else {
+      // Normal operation: branch flow only slightly lower than main
+      flowDifference = randomInRange(0.05, 0.3);
+      branchFlow = Math.max(0, mainFlow - flowDifference);
+    }
+
+    const pressure = randomInRange(
+      MOCK_SIM_CONFIG.pressureMin,
+      MOCK_SIM_CONFIG.pressureMax
+    );
+
+    // Leak probability based on flow difference
+    const leakProbability = Math.max(
+      0,
+      Math.min(100, flowDifference * 20)
+    );
+
+    const timestamp = new Date(mockState.clockMs).toISOString();
+
+    const data = {
+      timestamp,
+      mainFlow,
+      branchFlow,
+      flowDifference,
+      pressure,
+      leakProbability,
+      uptime: mockState.uptimeSec,
+      wifiStrength: -65 + Math.round(randomInRange(-5, 5)),
+      systemStatus: mockState.inLeak ? "LEAK" : "NORMAL",
+    };
+
+    const logs = [];
+    if (justStartedLeak) {
+      logs.push({
+        timestamp,
+        severity: "WARNING",
+        message: "Simulated leak started",
+      });
+    } else if (justEndedLeak) {
+      logs.push({
+        timestamp,
+        severity: "INFO",
+        message: "Simulated leak ended",
+      });
+    }
+
+    return { data, logs };
+  }
 
   const SEVERITY = {
     NORMAL: "NORMAL",
@@ -59,6 +201,7 @@
       "systemStatusIndicator"
     );
     DOM.systemStatusText = document.getElementById("systemStatusText");
+    DOM.simulationModeBadge = document.getElementById("simulationModeBadge");
     DOM.connectionBanner = document.getElementById("connectionBanner");
 
     DOM.mainFlowValue = document.getElementById("mainFlowValue");
@@ -102,6 +245,18 @@
     DOM.replaySlider = document.getElementById("replaySlider");
     DOM.replayTimestamp = document.getElementById("replayTimestamp");
     DOM.replayPlayBtn = document.getElementById("replayPlayBtn");
+    DOM.alarmSound = document.getElementById("alarmSound");
+    DOM.triggerLeakBtn = document.getElementById("triggerLeakBtn");
+    DOM.resetSystemBtn = document.getElementById("resetSystemBtn");
+  }
+
+  function updateSimulationUi() {
+    if (!DOM.simulationModeBadge) return;
+    if (MOCK_MODE) {
+      DOM.simulationModeBadge.classList.remove("hidden");
+    } else {
+      DOM.simulationModeBadge.classList.add("hidden");
+    }
   }
 
   function startClock() {
@@ -187,6 +342,14 @@
 
     async poll() {
       if (state.mode !== "live") return;
+
+      if (MOCK_MODE) {
+        const { data, logs } = generateMockPayload();
+        this.handleConnectionChange(true);
+        handleNewPayload(data, logs);
+        return;
+      }
+
       try {
         const [dataRes, logsRes] = await Promise.all([
           fetch(this.config.dataUrl),
@@ -502,8 +665,20 @@
       point.leakActive ||
       point.leakSeverity === SEVERITY.MODERATE ||
       point.leakSeverity === SEVERITY.CRITICAL;
+
     DOM.leakSection.classList.toggle("leak-active", leakActive);
     DOM.leakIcon.classList.toggle("hidden", !leakActive);
+
+    if (DOM.alarmSound) {
+      if (point.leakSeverity === SEVERITY.CRITICAL) {
+        if (DOM.alarmSound.paused) {
+          DOM.alarmSound.play().catch(() => {});
+        }
+      } else {
+        DOM.alarmSound.pause();
+        DOM.alarmSound.currentTime = 0;
+      }
+    }
   }
 
   function updateAnalytics() {
@@ -1043,17 +1218,120 @@
     });
   }
 
+  function forceTriggerLeak() {
+    if (!MOCK_MODE) return;
+    mockState.inLeak = true;
+    mockState.leakRemainingSec = randomInt(
+      MOCK_SIM_CONFIG.leakDurationMinSec,
+      MOCK_SIM_CONFIG.leakDurationMaxSec
+    );
+    mockState.forceCriticalFlowDiff = 3.5;
+    state.aboveThresholdDurationSec = FLOW_THRESHOLDS.SUSTAIN_SECONDS;
+    mockState.clockMs += API_CONFIG.pollIntervalMs;
+    mockState.uptimeSec += API_CONFIG.pollIntervalMs / 1000;
+    const ts = new Date(mockState.clockMs).toISOString();
+    const mainFlow = randomInRange(MOCK_SIM_CONFIG.mainFlowMin, MOCK_SIM_CONFIG.mainFlowMax);
+    const flowDifference = 3.5;
+    const branchFlow = Math.max(0, mainFlow - flowDifference);
+    const data = {
+      timestamp: ts,
+      mainFlow,
+      branchFlow,
+      flowDifference,
+      pressure: randomInRange(MOCK_SIM_CONFIG.pressureMin, MOCK_SIM_CONFIG.pressureMax),
+      leakProbability: 85,
+      uptime: mockState.uptimeSec,
+      wifiStrength: -65,
+      systemStatus: "LEAK",
+    };
+    const logs = [{ timestamp: ts, severity: "WARNING", message: "Triggered leak (manual)" }];
+    handleNewPayload(data, logs);
+  }
+
+  function resetSystem() {
+    if (DOM.alarmSound) {
+      DOM.alarmSound.pause();
+      DOM.alarmSound.currentTime = 0;
+    }
+    state.currentLeak = null;
+    state.aboveThresholdDurationSec = 0;
+    state.totalWaterLostLiters = 0;
+    state.leakEvents = [];
+    if (MOCK_MODE) {
+      mockState.inLeak = false;
+      mockState.leakRemainingSec = 0;
+      mockState.forceCriticalFlowDiff = 0;
+      mockState.untilNextLeakSec = randomInt(
+        MOCK_SIM_CONFIG.leakIntervalMinSec,
+        MOCK_SIM_CONFIG.leakIntervalMaxSec
+      );
+    }
+    populateReplaySelect();
+    updateReplayControlsEnabled();
+    const last = state.dataHistory[state.dataHistory.length - 1];
+    const normalPoint = last
+      ? {
+          ...last,
+          flowDifference: 0.2,
+          leakSeverity: SEVERITY.NORMAL,
+          leakActive: false,
+          systemStatus: "NORMAL",
+          leakProbability: 10,
+        }
+      : {
+          timestamp: new Date(),
+          mainFlow: 4,
+          branchFlow: 3.8,
+          flowDifference: 0.2,
+          pressure: 101,
+          leakProbability: 10,
+          leakSeverity: SEVERITY.NORMAL,
+          leakActive: false,
+          systemStatus: "NORMAL",
+          uptime: mockState.uptimeSec || 0,
+          wifiStrength: -65,
+        };
+    updateHeader(normalPoint);
+    updateMetrics(normalPoint);
+    updateClassification(normalPoint);
+    updatePipeline(normalPoint);
+    updateAnalytics();
+  }
+
+  function attachSimulationButtons() {
+    if (DOM.triggerLeakBtn) {
+      DOM.triggerLeakBtn.addEventListener("click", forceTriggerLeak);
+    }
+    if (DOM.resetSystemBtn) {
+      DOM.resetSystemBtn.addEventListener("click", resetSystem);
+    }
+  }
+
   const dataService = new DataService(API_CONFIG);
 
   function init() {
     initDomRefs();
+    updateSimulationUi();
     startClock();
     buildCharts();
     attachChartControls();
     attachReplayControls();
     attachCsvExport();
+    attachSimulationButtons();
     updateReplayControlsEnabled();
     dataService.start();
+    document.body.addEventListener(
+      "click",
+      () => {
+        if (DOM.alarmSound) {
+          DOM.alarmSound.play().then(() => {
+            DOM.alarmSound.pause();
+            DOM.alarmSound.currentTime = 0;
+          }).catch(() => {});
+        }
+      },
+      { once: true }
+    );
   }
 
   if (document.readyState === "loading") {

@@ -11,7 +11,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <!-- Chart.js & Zoom Plugin -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.umd.min.js"></script>
   <script src="script.js" defer></script>
 </head>
 <body>
@@ -58,8 +57,24 @@
             <span id="systemStatusText" class="value">NORMAL</span>
           </div>
         </div>
+          <div id="simulationModeBadge" class="simulation-mode-badge hidden">
+            🧪 Simulation Mode Active
+          </div>
       </div>
     </header>
+
+    <section class="panel control-panel" aria-label="Simulation Controls">
+      <div class="panel-header panel-header-row">
+        <div>
+          <h2>Simulation Control</h2>
+          <span class="panel-subtitle">Inject test leaks and reset the virtual system</span>
+        </div>
+        <div class="control-panel-actions">
+          <button id="triggerLeakBtn" class="sim-btn sim-btn-leak">🔴 Trigger Leak</button>
+          <button id="resetSystemBtn" class="sim-btn sim-btn-reset">🔁 Reset System</button>
+        </div>
+      </div>
+    </section>
 
     <main class="main-layout">
       <!-- REAL-TIME METRICS GRID -->
@@ -388,6 +403,7 @@
       </section>
     </main>
   </div>
+  <audio id="alarmSound" src="assets/alarm.mp3" preload="auto" loop></audio>
 </body>
 </html>
 
