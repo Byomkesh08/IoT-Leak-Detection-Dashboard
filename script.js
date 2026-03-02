@@ -267,11 +267,17 @@ let connectionWatchdogTimer = null;
     DOM.resetSystemBtn = document.getElementById("resetSystemBtn");
     DOM.leakAlertOverlay = document.getElementById("leakAlertOverlay");
     DOM.entryScreen = document.getElementById("entryScreen");
+    DOM.modeSelectionScreen = document.getElementById("modeSelectionScreen");
     DOM.enterSystemBtn = document.getElementById("enterSystemBtn");
+    DOM.modeBackBtn = document.getElementById("modeBackBtn");
+    DOM.modeLiveBtn = document.getElementById("modeLiveBtn");
+    DOM.modeSimulationBtn = document.getElementById("modeSimulationBtn");
+    DOM.app = document.getElementById("app");
     DOM.sidebar = document.getElementById("sidebar");
     DOM.sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
     DOM.navItems = Array.from(document.querySelectorAll(".nav-item"));
     DOM.themeToggleBtn = document.getElementById("themeToggleBtn");
+    DOM.dashboardBackBtn = document.getElementById("dashboardBackBtn");
     DOM.simulationToggleBtn = document.getElementById("simulationToggleBtn");
     DOM.alarmIndicator = document.getElementById("alarmIndicator");
     DOM.views = {
@@ -294,6 +300,21 @@ let connectionWatchdogTimer = null;
     } catch {
       // ignore
     }
+  }
+
+  function showEntryScreen() {
+    if (DOM.entryScreen) DOM.entryScreen.classList.remove("hidden");
+    if (DOM.modeSelectionScreen) DOM.modeSelectionScreen.classList.add("hidden");
+  }
+
+  function showModeSelection() {
+    if (DOM.entryScreen) DOM.entryScreen.classList.add("hidden");
+    if (DOM.modeSelectionScreen) DOM.modeSelectionScreen.classList.remove("hidden");
+  }
+
+  function showDashboard() {
+    if (DOM.entryScreen) DOM.entryScreen.classList.add("hidden");
+    if (DOM.modeSelectionScreen) DOM.modeSelectionScreen.classList.add("hidden");
   }
 
   function saveThemePreference() {
@@ -1432,8 +1453,44 @@ let connectionWatchdogTimer = null;
     if (!DOM.entryScreen || !DOM.enterSystemBtn) return;
     DOM.enterSystemBtn.addEventListener("click", () => {
       state.ui.entryCompleted = true;
-      DOM.entryScreen.classList.add("hidden");
+      showModeSelection();
     });
+  }
+
+  function attachModeSelection() {
+    if (!DOM.modeSelectionScreen) return;
+    if (DOM.modeBackBtn) {
+      DOM.modeBackBtn.addEventListener("click", () => {
+        showEntryScreen();
+      });
+    }
+    if (DOM.modeLiveBtn) {
+      DOM.modeLiveBtn.addEventListener("click", () => {
+        state.isSimulationMode = false;
+        updateSimulationUi();
+        lastDataTimestampMs = null;
+        setConnectionState(true);
+        scheduleConnectionWatchdog();
+        showDashboard();
+      });
+    }
+    if (DOM.modeSimulationBtn) {
+      DOM.modeSimulationBtn.addEventListener("click", () => {
+        state.isSimulationMode = true;
+        updateSimulationUi();
+        setConnectionState(true);
+        if (connectionWatchdogTimer) {
+          clearTimeout(connectionWatchdogTimer);
+          connectionWatchdogTimer = null;
+        }
+        showDashboard();
+      });
+    }
+    if (DOM.dashboardBackBtn) {
+      DOM.dashboardBackBtn.addEventListener("click", () => {
+        showModeSelection();
+      });
+    }
   }
 
   function forceTriggerLeak() {
@@ -1552,6 +1609,7 @@ let connectionWatchdogTimer = null;
     updateSimulationUi();
     applyTheme();
     attachEntryScreen();
+    attachModeSelection();
     attachViewNavigation();
     attachThemeToggle();
     startClock();

@@ -104,7 +104,7 @@ body {
 
 .entry-title {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: 2rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-color);
@@ -120,7 +120,7 @@ body {
 
 .entry-subtitle {
   margin-top: 10px;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--muted-text);
@@ -170,7 +170,9 @@ body {
 }
 
 .entry-button {
-  margin-top: 10px;
+  margin-top: 14px;
+  padding: 10px 26px;
+  font-size: 0.82rem;
 }
 
 .project-abstract {
@@ -187,7 +189,7 @@ body {
 }
 
 .team-card {
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.6);
   background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 60%),
@@ -201,12 +203,82 @@ body {
 }
 
 .team-name {
-  font-size: 0.9rem;
+  font-size: 0.98rem;
 }
 
 .team-id {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--muted-text);
+}
+
+/* Mode selection screen */
+.mode-selection-screen {
+  z-index: 105;
+}
+
+.mode-back-btn {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.8);
+  background: rgba(15, 23, 42, 0.95);
+  color: #e5e7eb;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition:
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.mode-back-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.9);
+}
+
+.mode-selection-content {
+  max-width: 520px;
+  text-align: center;
+}
+
+.mode-title {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-color);
+}
+
+.mode-subtitle {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-text);
+}
+
+.mode-buttons {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+
+.mode-select-btn {
+  min-width: 260px;
+  padding: 12px 22px;
+  font-size: 0.9rem;
+}
+
+.mode-select-btn:hover {
+  transform: translateY(-2px) scale(1.03);
 }
 
 .team-card:nth-child(1) { animation-delay: 120ms; }
@@ -585,6 +657,10 @@ body::before {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.topbar-back-btn {
+  margin-right: 2px;
 }
 
 .header-left h1 {

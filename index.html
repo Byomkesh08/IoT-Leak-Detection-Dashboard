@@ -66,6 +66,27 @@
     </div>
   </div>
 
+  <!-- MODE SELECTION SCREEN -->
+  <div id="modeSelectionScreen" class="entry-screen hidden mode-selection-screen">
+    <button id="modeBackBtn" class="mode-back-btn" aria-label="Back to welcome">
+      ←
+    </button>
+    <div class="entry-content mode-selection-content">
+      <h2 class="mode-title">Select Operating Mode</h2>
+      <p class="mode-subtitle mono">
+        Choose how you want to run the Smart Water Leakage Monitoring System.
+      </p>
+      <div class="mode-buttons">
+        <button id="modeLiveBtn" class="sim-btn sim-btn-reset mode-select-btn">
+          🔌 Live Device Mode
+        </button>
+        <button id="modeSimulationBtn" class="sim-btn sim-btn-reset mode-select-btn">
+          🧪 Simulation Mode
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="app" class="dashboard">
     <div class="app-shell">
       <!-- SIDEBAR NAVIGATION -->
@@ -108,6 +129,9 @@
         <!-- TOP BAR -->
         <header class="header-panel topbar">
           <div class="header-left">
+            <button id="dashboardBackBtn" class="topbar-btn topbar-back-btn" aria-label="Back to mode selection">
+              ←
+            </button>
             <div class="logo-mark" aria-hidden="true">
               <svg width="32" height="40" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">
                 <defs>
