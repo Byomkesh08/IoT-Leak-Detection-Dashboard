@@ -183,6 +183,12 @@ const MOCK_MODE = true;
     leakHistoryForCsv: [],
     charts: null,
     timeWindowSeconds: 60,
+    simulationEnabled: true,
+    ui: {
+      activeView: "live",
+      theme: "dark",
+      entryCompleted: false,
+    },
     replay: {
       activeEvent: null,
       sliderLocked: false,
@@ -248,6 +254,31 @@ const MOCK_MODE = true;
     DOM.alarmSound = document.getElementById("alarmSound");
     DOM.triggerLeakBtn = document.getElementById("triggerLeakBtn");
     DOM.resetSystemBtn = document.getElementById("resetSystemBtn");
+    DOM.leakAlertOverlay = document.getElementById("leakAlertOverlay");
+    DOM.entryScreen = document.getElementById("entryScreen");
+    DOM.enterSystemBtn = document.getElementById("enterSystemBtn");
+    DOM.sidebar = document.getElementById("sidebar");
+    DOM.sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
+    DOM.navItems = Array.from(document.querySelectorAll(".nav-item"));
+    DOM.themeToggleBtn = document.getElementById("themeToggleBtn");
+    DOM.alarmIndicator = document.getElementById("alarmIndicator");
+    DOM.views = {
+      live: document.getElementById("view-live"),
+      analytics: document.getElementById("view-analytics"),
+      history: document.getElementById("view-history"),
+      simulation: document.getElementById("view-simulation"),
+      system: document.getElementById("view-system"),
+      team: document.getElementById("view-team"),
+      export: document.getElementById("view-export"),
+    };
+  }
+
+  function applyTheme() {
+    const theme = state.ui.theme === "light" ? "light" : "dark";
+    document.body.classList.toggle("theme-light", theme === "light");
+    if (DOM.themeToggleBtn) {
+      DOM.themeToggleBtn.textContent = theme === "light" ? "☀" : "🌙";
+    }
   }
 
   function updateSimulationUi() {
@@ -669,8 +700,10 @@ const MOCK_MODE = true;
     DOM.leakSection.classList.toggle("leak-active", leakActive);
     DOM.leakIcon.classList.toggle("hidden", !leakActive);
 
+    const critical = point.leakSeverity === SEVERITY.CRITICAL;
+
     if (DOM.alarmSound) {
-      if (point.leakSeverity === SEVERITY.CRITICAL) {
+      if (critical) {
         if (DOM.alarmSound.paused) {
           DOM.alarmSound.play().catch(() => {});
         }
@@ -678,6 +711,18 @@ const MOCK_MODE = true;
         DOM.alarmSound.pause();
         DOM.alarmSound.currentTime = 0;
       }
+    }
+
+    if (DOM.alarmIndicator) {
+      DOM.alarmIndicator.classList.toggle("alarm-active", critical);
+    }
+
+    if (DOM.leakAlertOverlay) {
+      const show =
+        point.systemStatus === "LEAK" ||
+        point.leakSeverity === SEVERITY.CRITICAL ||
+        point.leakActive;
+      DOM.leakAlertOverlay.classList.toggle("hidden", !show);
     }
   }
 
@@ -1218,6 +1263,78 @@ const MOCK_MODE = true;
     });
   }
 
+  function attachExportReport() {
+    const exportCsvBtn = document.getElementById("exportCsvBtn");
+    const exportPdfBtn = document.getElementById("exportPdfBtn");
+    if (exportCsvBtn && DOM.downloadCsvBtn) {
+      exportCsvBtn.addEventListener("click", () => {
+        DOM.downloadCsvBtn.click();
+      });
+    }
+    const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+    if (downloadPdfBtn && exportPdfBtn) {
+      downloadPdfBtn.addEventListener("click", () => {
+        window.print();
+      });
+      exportPdfBtn.addEventListener("click", () => {
+        window.print();
+      });
+    } else if (exportPdfBtn) {
+      exportPdfBtn.addEventListener("click", () => {
+        window.print();
+      });
+    }
+  }
+
+  function setActiveView(viewKey) {
+    const key = state.ui.views?.includes?.(viewKey) ? viewKey : viewKey;
+    state.ui.activeView = viewKey;
+    if (DOM.views) {
+      Object.entries(DOM.views).forEach(([name, el]) => {
+        if (!el) return;
+        el.classList.toggle("active", name === viewKey);
+      });
+    }
+    if (DOM.navItems) {
+      DOM.navItems.forEach((btn) => {
+        const target = btn.dataset.view;
+        btn.classList.toggle("active", target === viewKey);
+      });
+    }
+  }
+
+  function attachViewNavigation() {
+    if (DOM.navItems) {
+      DOM.navItems.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const view = btn.dataset.view || "live";
+          setActiveView(view);
+        });
+      });
+    }
+    if (DOM.sidebarToggleBtn && DOM.sidebar) {
+      DOM.sidebarToggleBtn.addEventListener("click", () => {
+        DOM.sidebar.classList.toggle("collapsed");
+      });
+    }
+  }
+
+  function attachThemeToggle() {
+    if (!DOM.themeToggleBtn) return;
+    DOM.themeToggleBtn.addEventListener("click", () => {
+      state.ui.theme = state.ui.theme === "light" ? "dark" : "light";
+      applyTheme();
+    });
+  }
+
+  function attachEntryScreen() {
+    if (!DOM.entryScreen || !DOM.enterSystemBtn) return;
+    DOM.enterSystemBtn.addEventListener("click", () => {
+      state.ui.entryCompleted = true;
+      DOM.entryScreen.classList.add("hidden");
+    });
+  }
+
   function forceTriggerLeak() {
     if (!MOCK_MODE) return;
     mockState.inLeak = true;
@@ -1312,11 +1429,16 @@ const MOCK_MODE = true;
   function init() {
     initDomRefs();
     updateSimulationUi();
+    applyTheme();
+    attachEntryScreen();
+    attachViewNavigation();
+    attachThemeToggle();
     startClock();
     buildCharts();
     attachChartControls();
     attachReplayControls();
     attachCsvExport();
+    attachExportReport();
     attachSimulationButtons();
     updateReplayControlsEnabled();
     dataService.start();
