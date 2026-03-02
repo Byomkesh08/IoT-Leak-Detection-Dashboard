@@ -1,4 +1,11 @@
 const MOCK_MODE = true;
+const THEME_STORAGE_KEY = "swlm-theme";
+const CHART_MAX_POINTS = 120;
+const CONNECTION_TIMEOUT_MS = 5000;
+
+let lastChartUpdateMs = 0;
+let lastDataTimestampMs = null;
+let connectionWatchdogTimer = null;
 
 (() => {
   const API_CONFIG = {
@@ -159,7 +166,7 @@ const MOCK_MODE = true;
     NORMAL_MAX: 0.5,
     MINOR_MAX: 1.5,
     MODERATE_MAX: 3.0,
-    SUSTAIN_SECONDS: 3,
+    REQUIRED_CONSECUTIVE: 5,
   };
 
   const DOM = {};
@@ -176,6 +183,7 @@ const MOCK_MODE = true;
     },
     lastTimestamp: null,
     aboveThresholdDurationSec: 0,
+    aboveThresholdCount: 0,
     currentLeak: null,
     leakEvents: [],
     totalWaterMonitoredLiters: 0,
@@ -183,11 +191,13 @@ const MOCK_MODE = true;
     leakHistoryForCsv: [],
     charts: null,
     timeWindowSeconds: 60,
-    simulationEnabled: true,
+    isSimulationMode: true,
     ui: {
       activeView: "live",
       theme: "dark",
       entryCompleted: false,
+      navigationLocked: false,
+      lastGaugeProb: null,
     },
     replay: {
       activeEvent: null,
@@ -223,6 +233,7 @@ const MOCK_MODE = true;
 
     DOM.leakSection = document.getElementById("leakSection");
     DOM.leakIcon = document.getElementById("leakIcon");
+    DOM.waterStream = document.querySelector(".water-stream");
 
     DOM.timeFilterGroup = document.getElementById("timeFilterGroup");
     DOM.toggleMainFlow = document.getElementById("toggleMainFlow");
@@ -261,6 +272,7 @@ const MOCK_MODE = true;
     DOM.sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
     DOM.navItems = Array.from(document.querySelectorAll(".nav-item"));
     DOM.themeToggleBtn = document.getElementById("themeToggleBtn");
+    DOM.simulationToggleBtn = document.getElementById("simulationToggleBtn");
     DOM.alarmIndicator = document.getElementById("alarmIndicator");
     DOM.views = {
       live: document.getElementById("view-live"),
@@ -273,9 +285,28 @@ const MOCK_MODE = true;
     };
   }
 
+  function loadThemePreference() {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      if (stored === "light" || stored === "dark") {
+        state.ui.theme = stored;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function saveThemePreference() {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, state.ui.theme);
+    } catch {
+      // ignore
+    }
+  }
+
   function applyTheme() {
     const theme = state.ui.theme === "light" ? "light" : "dark";
-    document.body.classList.toggle("theme-light", theme === "light");
+    document.body.classList.toggle("light-mode", theme === "light");
     if (DOM.themeToggleBtn) {
       DOM.themeToggleBtn.textContent = theme === "light" ? "☀" : "🌙";
     }
@@ -283,7 +314,7 @@ const MOCK_MODE = true;
 
   function updateSimulationUi() {
     if (!DOM.simulationModeBadge) return;
-    if (MOCK_MODE) {
+    if (state.isSimulationMode) {
       DOM.simulationModeBadge.classList.remove("hidden");
     } else {
       DOM.simulationModeBadge.classList.add("hidden");
@@ -374,9 +405,8 @@ const MOCK_MODE = true;
     async poll() {
       if (state.mode !== "live") return;
 
-      if (MOCK_MODE) {
+      if (state.isSimulationMode) {
         const { data, logs } = generateMockPayload();
-        this.handleConnectionChange(true);
         handleNewPayload(data, logs);
         return;
       }
@@ -394,18 +424,18 @@ const MOCK_MODE = true;
 
         const data = await dataRes.json();
         const logs = await logsRes.json();
-        this.handleConnectionChange(true);
         handleNewPayload(data, logs);
       } catch {
-        this.handleConnectionChange(false);
+        handleConnectionLoss();
       }
     }
 
-    handleConnectionChange(isConnected) {
-      if (state.connected === isConnected) return;
-      state.connected = isConnected;
-      updateConnectionBanner(isConnected);
-    }
+  }
+
+  function setConnectionState(isConnected) {
+    if (state.connected === isConnected) return;
+    state.connected = isConnected;
+    updateConnectionBanner(isConnected);
   }
 
   function updateConnectionBanner(isConnected) {
@@ -413,7 +443,29 @@ const MOCK_MODE = true;
     DOM.connectionBanner.classList.toggle("hidden", isConnected);
   }
 
+  function scheduleConnectionWatchdog() {
+    if (connectionWatchdogTimer) {
+      clearTimeout(connectionWatchdogTimer);
+    }
+    if (state.isSimulationMode) return;
+    connectionWatchdogTimer = setTimeout(() => {
+      if (!lastDataTimestampMs) return;
+      const delta = Date.now() - lastDataTimestampMs;
+      if (delta >= CONNECTION_TIMEOUT_MS) {
+        setConnectionState(false);
+      }
+    }, CONNECTION_TIMEOUT_MS);
+  }
+
+  function handleConnectionLoss() {
+    if (state.isSimulationMode) return;
+    setConnectionState(false);
+  }
+
   function handleNewPayload(data, logs) {
+    lastDataTimestampMs = Date.now();
+    setConnectionState(true);
+    scheduleConnectionWatchdog();
     const timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
     const flowDiff = data.flowDifference ?? 0;
     const mainFlow = data.mainFlow ?? 0;
@@ -445,12 +497,14 @@ const MOCK_MODE = true;
 
     if (flowDiff > FLOW_THRESHOLDS.NORMAL_MAX) {
       state.aboveThresholdDurationSec += deltaSec;
+      state.aboveThresholdCount += 1;
     } else {
       state.aboveThresholdDurationSec = 0;
+      state.aboveThresholdCount = 0;
     }
 
     const leakActive =
-      state.aboveThresholdDurationSec >= FLOW_THRESHOLDS.SUSTAIN_SECONDS &&
+      state.aboveThresholdCount >= FLOW_THRESHOLDS.REQUIRED_CONSECUTIVE &&
       severityByDiff !== SEVERITY.NORMAL;
 
     if (leakActive) {
@@ -506,7 +560,7 @@ const MOCK_MODE = true;
       state.timestamps.shift();
     }
 
-    state.logs = Array.isArray(logs) ? logs : [];
+    state.logs = Array.isArray(logs) ? logs.slice(-200) : [];
 
     state.leakHistoryForCsv.push({
       timestamp: timestamp.toISOString(),
@@ -547,7 +601,17 @@ const MOCK_MODE = true;
     const uptimeSeconds = point.uptime ?? 0;
     DOM.uptimeValue.textContent = formatUptime(uptimeSeconds);
 
-    if (typeof point.wifiStrength === "number") {
+    if (!state.connected) {
+      DOM.wifiStrengthValue.textContent = "-- dBm";
+      DOM.wifiQualityLabel.textContent = "Disconnected";
+      DOM.wifiBars.forEach((bar) => {
+        bar.classList.remove("active", "good", "ok", "bad");
+        const level = Number(bar.dataset.level || 0);
+        if (level === 1) {
+          bar.classList.add("active", "bad");
+        }
+      });
+    } else if (typeof point.wifiStrength === "number") {
       const quality = evaluateWifiQuality(point.wifiStrength);
       DOM.wifiStrengthValue.textContent = `${point.wifiStrength} dBm`;
       DOM.wifiQualityLabel.textContent = quality.label;
@@ -568,8 +632,10 @@ const MOCK_MODE = true;
 
     const severity = point.leakSeverity;
     const systemStatus =
-      point.systemStatus ||
-      (severity === SEVERITY.NORMAL ? "NORMAL" : "LEAK");
+      !state.connected
+        ? "SUSPICIOUS"
+        : point.systemStatus ||
+          (severity === SEVERITY.NORMAL ? "NORMAL" : "LEAK");
 
     DOM.systemStatusIndicator.classList.remove(
       "status-normal",
@@ -581,7 +647,11 @@ const MOCK_MODE = true;
     if (systemStatus === "LEAK" || severity === SEVERITY.CRITICAL) {
       DOM.systemStatusIndicator.classList.add("status-leak");
       statusText = "LEAK";
-    } else if (severity === SEVERITY.MINOR || severity === SEVERITY.MODERATE) {
+    } else if (
+      systemStatus === "SUSPICIOUS" ||
+      severity === SEVERITY.MINOR ||
+      severity === SEVERITY.MODERATE
+    ) {
       DOM.systemStatusIndicator.classList.add("status-suspicious");
       statusText = "SUSPICIOUS";
     } else {
@@ -598,19 +668,23 @@ const MOCK_MODE = true;
     DOM.pressureValue.textContent = formatNumber(point.pressure, 1);
 
     const prob = Math.max(0, Math.min(100, point.leakProbability || 0));
-    DOM.leakProbValue.textContent = `${prob.toFixed(0)}%`;
-    const probDeg = prob * 3.6;
+    const roundedProb = Math.round(prob);
+    if (state.ui.lastGaugeProb !== roundedProb) {
+      state.ui.lastGaugeProb = roundedProb;
+      DOM.leakProbValue.textContent = `${roundedProb}%`;
+      const probDeg = prob * 3.6;
 
-    let color = "#22c55e";
-    if (prob >= 80 || point.leakSeverity === SEVERITY.CRITICAL) {
-      color = "#ef4444";
-    } else if (prob >= 60 || point.leakSeverity === SEVERITY.MODERATE) {
-      color = "#f97316";
-    } else if (prob >= 40 || point.leakSeverity === SEVERITY.MINOR) {
-      color = "#eab308";
+      let color = "#22c55e";
+      if (prob >= 80 || point.leakSeverity === SEVERITY.CRITICAL) {
+        color = "#ef4444";
+      } else if (prob >= 60 || point.leakSeverity === SEVERITY.MODERATE) {
+        color = "#f97316";
+      } else if (prob >= 40 || point.leakSeverity === SEVERITY.MINOR) {
+        color = "#eab308";
+      }
+      DOM.leakProbGauge.style.setProperty("--gauge-value", String(probDeg));
+      DOM.leakProbGauge.style.setProperty("--gauge-color", color);
     }
-    DOM.leakProbGauge.style.setProperty("--gauge-value", String(probDeg));
-    DOM.leakProbGauge.style.setProperty("--gauge-color", color);
 
     DOM.leakSeverityValue.textContent = point.leakSeverity;
     DOM.leakSeverityValue.classList.remove(
@@ -700,21 +774,28 @@ const MOCK_MODE = true;
     DOM.leakSection.classList.toggle("leak-active", leakActive);
     DOM.leakIcon.classList.toggle("hidden", !leakActive);
 
-    const critical = point.leakSeverity === SEVERITY.CRITICAL;
+    const criticalOrModerate =
+      point.leakSeverity === SEVERITY.CRITICAL ||
+      point.leakSeverity === SEVERITY.MODERATE;
+
+    if (!state.alarmActive) state.alarmActive = false;
+    const shouldAlarmBeActive = criticalOrModerate;
 
     if (DOM.alarmSound) {
-      if (critical) {
+      if (shouldAlarmBeActive && !state.alarmActive) {
+        state.alarmActive = true;
         if (DOM.alarmSound.paused) {
           DOM.alarmSound.play().catch(() => {});
         }
-      } else {
+      } else if (!shouldAlarmBeActive && state.alarmActive) {
+        state.alarmActive = false;
         DOM.alarmSound.pause();
         DOM.alarmSound.currentTime = 0;
       }
     }
 
     if (DOM.alarmIndicator) {
-      DOM.alarmIndicator.classList.toggle("alarm-active", critical);
+      DOM.alarmIndicator.classList.toggle("alarm-active", shouldAlarmBeActive);
     }
 
     if (DOM.leakAlertOverlay) {
@@ -723,6 +804,12 @@ const MOCK_MODE = true;
         point.leakSeverity === SEVERITY.CRITICAL ||
         point.leakActive;
       DOM.leakAlertOverlay.classList.toggle("hidden", !show);
+    }
+
+    if (DOM.waterStream) {
+      const hasFlow = (point.mainFlow ?? 0) > 0;
+      DOM.waterStream.classList.toggle("paused", !hasFlow);
+      DOM.waterStream.classList.toggle("fast", hasFlow && leakActive);
     }
   }
 
@@ -810,9 +897,7 @@ const MOCK_MODE = true;
     if (!window.Chart) return;
 
     const baseOptions = {
-      animation: {
-        duration: 200,
-      },
+      animation: false,
       responsive: true,
       maintainAspectRatio: false,
       interaction: {
@@ -967,6 +1052,11 @@ const MOCK_MODE = true;
 
   function updateCharts(point) {
     if (!state.charts) return;
+    const now = Date.now();
+    if (now - lastChartUpdateMs < 2000) {
+      return;
+    }
+    lastChartUpdateMs = now;
     const { mainBranchChart, diffChart, pressureChart } = state.charts;
     const label = timeLabelFromDate(point.timestamp);
 
@@ -994,7 +1084,7 @@ const MOCK_MODE = true;
   }
 
   function trimChartData(chart) {
-    const max = API_CONFIG.maxHistoryPoints;
+    const max = CHART_MAX_POINTS;
     const { labels, datasets } = chart.data;
     while (labels.length > max) labels.shift();
     datasets.forEach((ds) => {
@@ -1003,7 +1093,7 @@ const MOCK_MODE = true;
   }
 
   function applyTimeWindow(chart) {
-    const windowSize = state.timeWindowSeconds;
+    const windowSize = Math.min(state.timeWindowSeconds, CHART_MAX_POINTS);
     const labels = chart.data.labels;
     const len = labels.length;
     if (len <= windowSize) return;
@@ -1034,7 +1124,10 @@ const MOCK_MODE = true;
 
     function reapplyWindowForChart(chart) {
       const fullLen = chart.data.labels.length;
-      const windowSize = Math.min(state.timeWindowSeconds, fullLen);
+      const windowSize = Math.min(
+        Math.min(state.timeWindowSeconds, CHART_MAX_POINTS),
+        fullLen
+      );
       if (windowSize <= 0) return;
       const start = fullLen - windowSize;
       chart.data.labels = chart.data.labels.slice(start);
@@ -1307,6 +1400,11 @@ const MOCK_MODE = true;
     if (DOM.navItems) {
       DOM.navItems.forEach((btn) => {
         btn.addEventListener("click", () => {
+          if (state.ui.navigationLocked) return;
+          state.ui.navigationLocked = true;
+          setTimeout(() => {
+            state.ui.navigationLocked = false;
+          }, 200);
           const view = btn.dataset.view || "live";
           setActiveView(view);
         });
@@ -1324,6 +1422,7 @@ const MOCK_MODE = true;
     DOM.themeToggleBtn.addEventListener("click", () => {
       state.ui.theme = state.ui.theme === "light" ? "dark" : "light";
       applyTheme();
+      saveThemePreference();
     });
   }
 
@@ -1336,7 +1435,7 @@ const MOCK_MODE = true;
   }
 
   function forceTriggerLeak() {
-    if (!MOCK_MODE) return;
+    if (!state.isSimulationMode) return;
     mockState.inLeak = true;
     mockState.leakRemainingSec = randomInt(
       MOCK_SIM_CONFIG.leakDurationMinSec,
@@ -1372,9 +1471,10 @@ const MOCK_MODE = true;
     }
     state.currentLeak = null;
     state.aboveThresholdDurationSec = 0;
+    state.aboveThresholdCount = 0;
     state.totalWaterLostLiters = 0;
     state.leakEvents = [];
-    if (MOCK_MODE) {
+    if (state.isSimulationMode) {
       mockState.inLeak = false;
       mockState.leakRemainingSec = 0;
       mockState.forceCriticalFlowDiff = 0;
@@ -1416,6 +1516,24 @@ const MOCK_MODE = true;
   }
 
   function attachSimulationButtons() {
+    if (DOM.simulationToggleBtn) {
+      DOM.simulationToggleBtn.addEventListener("click", () => {
+        state.isSimulationMode = !state.isSimulationMode;
+        updateSimulationUi();
+        if (!state.isSimulationMode) {
+          // entering live mode: reset connection watchdog state
+          lastDataTimestampMs = null;
+          setConnectionState(true);
+        } else {
+          // back to simulation, clear watchdog
+          if (connectionWatchdogTimer) {
+            clearTimeout(connectionWatchdogTimer);
+            connectionWatchdogTimer = null;
+          }
+          setConnectionState(true);
+        }
+      });
+    }
     if (DOM.triggerLeakBtn) {
       DOM.triggerLeakBtn.addEventListener("click", forceTriggerLeak);
     }
@@ -1428,6 +1546,7 @@ const MOCK_MODE = true;
 
   function init() {
     initDomRefs();
+    loadThemePreference();
     updateSimulationUi();
     applyTheme();
     attachEntryScreen();

@@ -30,7 +30,7 @@
   --transition-med: 260ms ease-out;
 }
 
-body.theme-light {
+body.light-mode {
   --bg-color: #f8fafc;
   --card-bg: #ffffff;
   --text-color: #0f172a;
@@ -854,31 +854,31 @@ body::before {
   color: rgba(148, 163, 184, 0.9);
 }
 
-.metrics-panel {
+#view-live .metrics-panel {
   grid-area: metrics;
 }
 
-.pipeline-panel {
+#view-live .pipeline-panel {
   grid-area: pipeline;
 }
 
-.charts-panel {
+#view-live .charts-panel {
   grid-area: charts;
 }
 
-.classification-panel {
+#view-live .classification-panel {
   grid-area: classification;
 }
 
-.logs-panel {
+#view-live .logs-panel {
   grid-area: logs;
 }
 
-.analytics-panel {
+#view-live .analytics-panel {
   grid-area: analytics;
 }
 
-.replay-panel {
+#view-live .replay-panel {
   grid-area: replay;
 }
 
@@ -1022,6 +1022,9 @@ body::before {
     0 0 20px color-mix(in srgb, var(--gauge-color) 70%, transparent),
     0 0 40px color-mix(in srgb, var(--gauge-color) 60%, transparent);
   position: relative;
+  transition:
+    background 0.4s ease-out,
+    box-shadow 0.4s ease-out;
 }
 
 .gauge::before {
@@ -1184,6 +1187,15 @@ body::before {
   animation: waterFlow 2.2s linear infinite;
 }
 
+.water-stream.paused {
+  animation-play-state: paused;
+  opacity: 0.5;
+}
+
+.water-stream.fast {
+  animation-duration: 1.4s;
+}
+
 @keyframes waterFlow {
   0% {
     background-position: 0 0, 0 0;
@@ -1264,7 +1276,6 @@ body::before {
       transparent 100%
     ),
     linear-gradient(90deg, rgba(15, 23, 42, 1), rgba(15, 23, 42, 1));
-  animation-duration: 1.4s;
 }
 
 /* Charts */
