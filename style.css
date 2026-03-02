@@ -30,7 +30,7 @@
   --transition-med: 260ms ease-out;
 }
 
-.light-mode {
+body.theme-light {
   --bg-color: #f8fafc;
   --card-bg: #ffffff;
   --text-color: #0f172a;
