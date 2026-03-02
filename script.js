@@ -306,7 +306,9 @@ let connectionWatchdogTimer = null;
 
   function applyTheme() {
     const theme = state.ui.theme === "light" ? "light" : "dark";
-    document.body.classList.toggle("light-mode", theme === "light");
+    const isLight = theme === "light";
+    document.body.classList.toggle("light-mode", isLight);
+    document.body.classList.toggle("theme-light", isLight);
     if (DOM.themeToggleBtn) {
       DOM.themeToggleBtn.textContent = theme === "light" ? "☀" : "🌙";
     }
